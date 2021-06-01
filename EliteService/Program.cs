@@ -10,9 +10,9 @@ namespace EliteService
         /// </summary>
         static void Main()
         {
-            ServiceInit.Begin();
-            Console.ReadLine();
-            return;
+            //ServiceInit.Begin();
+            //Console.ReadLine();
+            //return;
             ServiceBase[] ServicesToRun;
             ServicesToRun = new ServiceBase[]
             {

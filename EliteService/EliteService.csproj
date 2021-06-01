@@ -196,6 +196,7 @@
     <Compile Include="Service\Upgrade.cs" />
     <Compile Include="Service\QueryRecord.cs" />
     <Compile Include="Utility\DataValidate.cs" />
+    <Compile Include="Utility\EmailHelper.cs" />
     <Compile Include="Utility\ReturnMsg.cs" />
     <Compile Include="Utility\LogHelper.cs" />
     <Compile Include="Utility\RedisHelper.cs" />
@@ -220,7 +221,9 @@
       <DependentUpon>ProjectInstaller.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <EmbeddedResource Include="Control\EmailTemplate\WarningTemplate.html" />
+  </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.7.2">
       <Visible>False</Visible>

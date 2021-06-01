@@ -9,7 +9,9 @@ using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.IO;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 
@@ -22,6 +24,8 @@ namespace EliteService.Control
         private int intervalCount = 0;
 
         private int heartBeatInterval = 10; //心跳检测时间间隔。
+
+        private bool sendingFlag = true;//正在发送邮件
 
         public void BeginTask()
         {
@@ -126,6 +130,118 @@ namespace EliteService.Control
                 UpdateDatabaseWithoutSaveHistory(returns, dev);
             }
 
+            //邮件预警
+            if (returns.Length >1)
+            {
+                if (returns[5] == 0x00 || returns[5] == 0xbb)//0x00--正常&空闲 0xbb--正常&繁忙
+                {
+                    dev.EmailedSentFlag = false;
+                }
+                else if (returns[5] == 0x01 || returns[5] == 0xbc)//0x01--故障&空闲 0xbc--故障&繁忙
+                {
+                    if (!dev.EmailedSentFlag && dev.DeviceType == 5)//上线后还未发送邮件预警（且设备型号为OS-704FC-A）
+                    {
+                        Action<byte[], Device> action = SendWarningEmail;
+                        action.BeginInvoke(returns, dev, null, null);
+                    }
+                }
+            }
+        }
+
+        private void SendWarningEmail(byte[] returns, Device dev)
+        {
+          
+
+            string arm_version;
+            string dsp_version;
+            string room_name;
+            string group_name;
+            using (MySqlConnection conn = new MySqlConnection(Helper.GetConstr()))
+            {
+                conn.Open();
+                //查询的列
+                string columns = "dev.device_type,dev.id, dev.name, dev.ip,arm_version,dsp_version, dev.mark, dev.gateway,dev.mac, dev.group_id, dev.status, grp.name as group_name, dev.room_id,room.reverb_time,room.name as room_name,dev.create_time ";
+                //sql语句
+                StringBuilder commandText = new StringBuilder("SELECT " + columns +
+                    "FROM dev_device dev " +
+                    "left join sch_room room on dev.room_id = room.id and room.is_delete=0 " +
+                    "left join dev_group grp on dev.group_id = grp.id " +
+                    "where dev.id=" + dev.Id.ToString());
+                //查询结果
+                DataSet ds_device = MySqlHelper.ExecuteDataset(conn, commandText.ToString());
+                if (ds_device.Tables[0].Rows.Count > 0)
+                {
+                    DataRow device = ds_device.Tables[0].Rows[0];
+                    //string arm_version = Convert.ToString(device["arm_version"]);
+                    //string dsp_version = Convert.ToString(device["dsp_version"]);
+                    room_name = Convert.ToString(device["room_name"]);
+                    group_name = Convert.ToString(device["group_name"]);
+                }
+                else
+                {
+                    return;
+                }
+                //给所有用户发预警邮件
+                DataSet ds_user = MySqlHelper.ExecuteDataset(conn, "select user.contact_name,user.email,user.status,user.is_delete from ucb_user user");
+                if (ds_user.Tables[0].Rows.Count > 0)
+                {
+                    for (int i = 0; i < ds_user.Tables[0].Rows.Count; i++)
+                    {
+                        DataRow user = ds_user.Tables[0].Rows[i];
+
+                        //接收人
+                        string toEmailAddress = user["email"].ToString();
+                        //接收人称呼
+                        string contactName = user["contact_name"].ToString();
+                        //标题
+                        string subject = "主机故障预警";
+                        //用户账号是否启用
+                        int status = Convert.ToInt32(user["status"]);
+                        //用户账号是否被删除
+                        int is_delete = Convert.ToInt32(user["is_delete"]);
+
+                        if (!string.IsNullOrEmpty(contactName) && !string.IsNullOrEmpty(toEmailAddress) && status == 1 && is_delete == 0)
+                        {
+                            //正文
+                            string body = ReplaceText(contactName, dev.Name, dev.Ip, room_name, group_name);
+                            EmailHelper emailHelper = new EmailHelper(toEmailAddress, subject, true, body);
+                            emailHelper.Send();
+                            dev.EmailedSentFlag = true;
+                            LogHelper.GetInstance.Write($"发送预警邮件", $"接收人：{contactName}--{toEmailAddress}，故障设备：{dev.Name}--{dev.Ip} 所属教室：{room_name} 所属分组：{group_name}");
+                        }
+                    }
+
+                }
+                conn.Close();
+            }
+        }
+
+        /// <summary>
+        /// 替换模板中的字段值
+        /// </summary>
+        /// <param name="toName"></param>
+        /// <param name="deviceName"></param>
+        /// <param name="deviceIP"></param>
+        /// <returns></returns>
+        public string ReplaceText(string contactName, string deviceName, string deviceIP, string roomName, string groupName)
+        {
+            string Namespace = MethodBase.GetCurrentMethod().DeclaringType.Namespace;
+            string path = $"{Namespace}.EmailTemplate.WarningTemplate.html";
+            if (path == string.Empty)
+            {
+                return string.Empty;
+            }
+            Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(path);
+            StreamReader sr = new StreamReader(stream);
+            string str;
+            str = sr.ReadToEnd();
+            str = str.Replace("$Contact_Name$", contactName);
+            str = str.Replace("$Device_Name$", deviceName);
+            str = str.Replace("$Device_IP$", deviceIP);
+            str = str.Replace("$Room_Name$", roomName);
+            str = str.Replace("$Group_Name$", groupName);
+
+            return str;
         }
 
         private void UpdateStatus(int deviceId)

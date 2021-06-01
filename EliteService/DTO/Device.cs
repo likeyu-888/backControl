@@ -18,6 +18,11 @@
         public byte[] Dsp { get; set; }
 
         /// <summary>
+        /// 是否已经发送邮件的标志位， true-已经发过预警邮件 false-未发过预警邮件
+        /// </summary>
+        public bool EmailedSentFlag { get; set; }
+
+        /// <summary>
         /// 删除标志，使用时先重置为1，数据库存在时置为0，最后仍为1的表示不存在，需删除
         /// </summary>
         public int DeleteTag { get; set; }
@@ -33,6 +38,7 @@
             this.ArmVersion = "";
             this.Status = 100;
             this.DeviceType = 0;
+            this.EmailedSentFlag = false;
         }
     }
 }
